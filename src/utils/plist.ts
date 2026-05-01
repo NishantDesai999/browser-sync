@@ -1,11 +1,14 @@
 import { execSync } from "child_process";
+import { readFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import plist from "plist";
 
 export function readBinaryPlist(filePath: string): object {
-  // plutil ships with macOS — no install needed
-  let xml: string;
+  // Write to a temp file to avoid stdout buffer limits on large plists
+  const tmp = join(tmpdir(), `bsync-plist-${Date.now()}.xml`);
   try {
-    xml = execSync(`plutil -convert xml1 -o - "${filePath}"`).toString("utf-8");
+    execSync(`plutil -convert xml1 "${filePath}" -o "${tmp}"`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("permission") || msg.includes("couldn't be opened")) {
@@ -17,5 +20,11 @@ export function readBinaryPlist(filePath: string): object {
     }
     throw err;
   }
-  return plist.parse(xml) as object;
+
+  try {
+    const xml = readFileSync(tmp, "utf-8");
+    return plist.parse(xml) as object;
+  } finally {
+    try { unlinkSync(tmp); } catch { /* ignore */ }
+  }
 }
