@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.js.map
+
+# Local browser-sync config (contains GitHub token + Gist ID)
+~/.browser-sync/
+.browser-sync/
+config.json

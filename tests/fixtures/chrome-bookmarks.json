@@ -1,0 +1,49 @@
+{
+  "roots": {
+    "bookmark_bar": {
+      "id": "1",
+      "type": "folder",
+      "name": "Bookmarks bar",
+      "date_added": "13370000000000000",
+      "children": [
+        {
+          "id": "2",
+          "type": "url",
+          "name": "GitHub",
+          "url": "https://github.com",
+          "date_added": "13370000000000000"
+        },
+        {
+          "id": "3",
+          "type": "folder",
+          "name": "Dev Tools",
+          "date_added": "13370000000000000",
+          "children": [
+            {
+              "id": "4",
+              "type": "url",
+              "name": "MDN Web Docs",
+              "url": "https://developer.mozilla.org",
+              "date_added": "13370000000000000"
+            }
+          ]
+        }
+      ]
+    },
+    "other": {
+      "id": "5",
+      "type": "folder",
+      "name": "Other bookmarks",
+      "date_added": "13370000000000000",
+      "children": [
+        {
+          "id": "6",
+          "type": "url",
+          "name": "Hacker News",
+          "url": "https://news.ycombinator.com",
+          "date_added": "13370000000000000"
+        }
+      ]
+    }
+  }
+}
