@@ -193,6 +193,56 @@ function canonicalToChrome(node: BookmarkNode, idCounter: { v: number }): Chrome
   };
 }
 
+// --- Merge: preserve browser-unique bookmarks when pushing ---
+
+export interface MergeResult {
+  tree: BookmarkTree;
+  preservedCount: number;
+}
+
+export function mergeWithExisting(
+  incoming: BookmarkTree,
+  existing: BookmarkTree,
+  existingLabel: string
+): MergeResult {
+  const incomingUrls = new Set(
+    [
+      ...flattenTree(incoming.roots.bookmarkBar),
+      ...flattenTree(incoming.roots.other),
+      ...(incoming.roots.mobile ? flattenTree(incoming.roots.mobile) : []),
+    ]
+      .filter((n) => n.type === "bookmark" && n.url)
+      .map((n) => n.url!)
+  );
+
+  const uniqueToExisting = [
+    ...flattenTree(existing.roots.bookmarkBar),
+    ...flattenTree(existing.roots.other),
+    ...(existing.roots.mobile ? flattenTree(existing.roots.mobile) : []),
+  ].filter((n) => n.type === "bookmark" && n.url && !incomingUrls.has(n.url));
+
+  if (uniqueToExisting.length === 0) {
+    return { tree: incoming, preservedCount: 0 };
+  }
+
+  const preservedFolder: BookmarkNode = {
+    id: randomUUID(),
+    type: "folder",
+    title: `Preserved from ${existingLabel} (${new Date().toLocaleDateString()})`,
+    children: uniqueToExisting.map((n) => ({ ...n, id: randomUUID() })),
+  };
+
+  const mergedOther: BookmarkNode = {
+    ...incoming.roots.other,
+    children: [...(incoming.roots.other.children ?? []), preservedFolder],
+  };
+
+  return {
+    tree: { ...incoming, roots: { ...incoming.roots, other: mergedOther } },
+    preservedCount: uniqueToExisting.length,
+  };
+}
+
 export function canonicalToChromeFile(tree: BookmarkTree): ChromeBookmarkFile {
   const counter = { v: 1 };
   return {

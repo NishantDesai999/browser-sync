@@ -1,8 +1,13 @@
 import { existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { BrowserName } from "../types.js";
-import { writeChromeBookmarks } from "../browsers/chrome.js";
-import { canonicalToChromeFile, canonicalToNetscapeHtml } from "../adapters/bookmark-adapter.js";
+import { readChromeBookmarks, writeChromeBookmarks } from "../browsers/chrome.js";
+import {
+  canonicalToChromeFile,
+  canonicalToNetscapeHtml,
+  chromeToCanonical,
+  mergeWithExisting,
+} from "../adapters/bookmark-adapter.js";
 import { loadBookmarks } from "../store/gist-store.js";
 import { getChromeBookmarksPath, getDataDir } from "../utils/paths.js";
 import { log } from "../utils/logger.js";
@@ -30,20 +35,42 @@ export async function push(browser: BrowserName, opts: PushOptions): Promise<voi
   }
 
   if (browser === "chrome") {
-    const chromeData = canonicalToChromeFile(tree);
     const bookmarksPath = getChromeBookmarksPath();
     if (opts.verbose) log.info(`Writing to ${bookmarksPath}`);
 
+    // Merge: preserve any Chrome-unique bookmarks not in the Gist
+    let mergedTree = tree;
+    let preservedCount = 0;
+    if (existsSync(bookmarksPath)) {
+      try {
+        const existing = readChromeBookmarks(bookmarksPath);
+        const existingCanonical = chromeToCanonical(existing);
+        const result = mergeWithExisting(tree, existingCanonical, "Chrome");
+        mergedTree = result.tree;
+        preservedCount = result.preservedCount;
+      } catch {
+        // If we can't read existing bookmarks, proceed with Gist-only
+      }
+    }
+
     if (opts.dryRun) {
-      const count = tree.roots.bookmarkBar.children?.length ?? 0;
+      const count = mergedTree.roots.bookmarkBar.children?.length ?? 0;
       log.warn(`--dry-run: would write ${count} top-level bar bookmarks to Chrome`);
+      if (preservedCount > 0) {
+        log.warn(`--dry-run: would also preserve ${preservedCount} Chrome-unique bookmarks`);
+      }
       return;
     }
 
     const writeSpinner = log.step("Writing Chrome bookmarks...");
     try {
+      const chromeData = canonicalToChromeFile(mergedTree);
       writeChromeBookmarks(chromeData, bookmarksPath);
       writeSpinner.succeed("Chrome bookmarks updated (restart Chrome to see changes)");
+      if (preservedCount > 0) {
+        log.info(`Preserved ${preservedCount} Chrome-unique bookmarks in "Other Bookmarks"`);
+      }
+      log.info(`Backup saved to ${bookmarksPath}.bsync-backup`);
     } catch (err) {
       writeSpinner.fail("Failed to write Chrome bookmarks");
       throw err;

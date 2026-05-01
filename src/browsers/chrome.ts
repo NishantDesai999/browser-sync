@@ -42,6 +42,10 @@ export function writeChromeBookmarks(data: ChromeBookmarkFile, bookmarksPath: st
     );
   }
 
+  // Backup before overwriting so nothing is permanently lost
+  const backup = `${bookmarksPath}.bsync-backup`;
+  writeFileSync(backup, readFileSync(bookmarksPath, "utf-8"), "utf-8");
+
   const tmp = `${bookmarksPath}.bsync-tmp`;
   writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
   renameSync(tmp, bookmarksPath);
