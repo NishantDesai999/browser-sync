@@ -1,15 +1,16 @@
-import { existsSync, writeFileSync } from "fs";
-import { join } from "path";
+import { existsSync } from "fs";
 import { BrowserName } from "../types.js";
 import { readChromeBookmarks, writeChromeBookmarks } from "../browsers/chrome.js";
+import { writeFirefoxBookmarks } from "../browsers/firefox.js";
+import { writeSafariBookmarks, readSafariBookmarks } from "../browsers/safari.js";
 import {
   canonicalToChromeFile,
-  canonicalToNetscapeHtml,
   chromeToCanonical,
+  safariToCanonical,
   mergeWithExisting,
 } from "../adapters/bookmark-adapter.js";
 import { loadBookmarks } from "../store/gist-store.js";
-import { getChromeBookmarksPath, getDataDir } from "../utils/paths.js";
+import { getChromeBookmarksPath, getFirefoxPlacesDb, getSafariBookmarksPath } from "../utils/paths.js";
 import { log } from "../utils/logger.js";
 
 interface PushOptions {
@@ -38,68 +39,87 @@ export async function push(browser: BrowserName, opts: PushOptions): Promise<voi
     const bookmarksPath = getChromeBookmarksPath();
     if (opts.verbose) log.info(`Writing to ${bookmarksPath}`);
 
-    // Merge: preserve any Chrome-unique bookmarks not in the Gist
     let mergedTree = tree;
     let preservedCount = 0;
     if (existsSync(bookmarksPath)) {
       try {
         const existing = readChromeBookmarks(bookmarksPath);
-        const existingCanonical = chromeToCanonical(existing);
-        const result = mergeWithExisting(tree, existingCanonical, "Chrome");
+        const result = mergeWithExisting(tree, chromeToCanonical(existing), "Chrome");
         mergedTree = result.tree;
         preservedCount = result.preservedCount;
-      } catch {
-        // If we can't read existing bookmarks, proceed with Gist-only
-      }
+      } catch { /* proceed with Gist-only if Chrome unreadable */ }
     }
 
     if (opts.dryRun) {
       const count = mergedTree.roots.bookmarkBar.children?.length ?? 0;
       log.warn(`--dry-run: would write ${count} top-level bar bookmarks to Chrome`);
-      if (preservedCount > 0) {
-        log.warn(`--dry-run: would also preserve ${preservedCount} Chrome-unique bookmarks`);
-      }
+      if (preservedCount > 0) log.warn(`--dry-run: would preserve ${preservedCount} Chrome-unique bookmarks`);
       return;
     }
 
-    const writeSpinner = log.step("Writing Chrome bookmarks...");
+    const spinner = log.step("Writing Chrome bookmarks...");
     try {
-      const chromeData = canonicalToChromeFile(mergedTree);
-      writeChromeBookmarks(chromeData, bookmarksPath);
-      writeSpinner.succeed("Chrome bookmarks updated (restart Chrome to see changes)");
-      if (preservedCount > 0) {
-        log.info(`Preserved ${preservedCount} Chrome-unique bookmarks in "Other Bookmarks"`);
-      }
-      log.info(`Backup saved to ${bookmarksPath}.bsync-backup`);
+      writeChromeBookmarks(canonicalToChromeFile(mergedTree), bookmarksPath);
+      spinner.succeed("Chrome bookmarks updated (restart Chrome to see changes)");
+      if (preservedCount > 0) log.info(`Preserved ${preservedCount} Chrome-unique bookmarks in "Other Bookmarks"`);
+      log.info(`Backup: ${bookmarksPath}.bsync-backup`);
     } catch (err) {
-      writeSpinner.fail("Failed to write Chrome bookmarks");
+      spinner.fail("Failed to write Chrome bookmarks");
       throw err;
     }
     return;
   }
 
-  // Firefox and Safari: export Netscape HTML
-  const html = canonicalToNetscapeHtml(tree);
-  const exportPath = join(getDataDir(), "export.html");
+  if (browser === "firefox") {
+    const dbPath = getFirefoxPlacesDb();
+    if (opts.verbose) log.info(`Writing to ${dbPath}`);
 
-  if (opts.dryRun) {
-    const barCount = tree.roots.bookmarkBar.children?.length ?? 0;
-    log.warn(`--dry-run: would write Netscape HTML export with ${barCount} top-level bar items`);
+    if (opts.dryRun) {
+      const count = tree.roots.bookmarkBar.children?.length ?? 0;
+      log.warn(`--dry-run: would write ${count} top-level bar bookmarks to Firefox SQLite`);
+      return;
+    }
+
+    const spinner = log.step("Writing Firefox bookmarks...");
+    try {
+      const backupPath = writeFirefoxBookmarks(tree, dbPath);
+      spinner.succeed("Firefox bookmarks updated (restart Firefox to see changes)");
+      log.info(`Backup: ${backupPath}`);
+    } catch (err) {
+      spinner.fail("Failed to write Firefox bookmarks");
+      throw err;
+    }
     return;
   }
 
-  writeFileSync(exportPath, html, "utf-8");
+  // Safari
+  const plistPath = getSafariBookmarksPath();
+  if (opts.verbose) log.info(`Writing to ${plistPath}`);
 
-  if (browser === "firefox") {
-    log.success(`Wrote ${exportPath}`);
-    log.info("To import in Firefox:");
-    log.info("  Bookmarks > Manage Bookmarks > Import and Backup > Import Bookmarks from HTML");
-    log.info(`  Then select: ${exportPath}`);
-  } else {
-    log.success(`Wrote ${exportPath}`);
-    log.info("To import in Safari:");
-    log.info("  File > Import From > Bookmarks HTML File...");
-    log.info(`  Then select: ${exportPath}`);
-    log.warn("Note: Safari extensions must be installed manually from the App Store.");
+  if (opts.dryRun) {
+    const count = tree.roots.bookmarkBar.children?.length ?? 0;
+    log.warn(`--dry-run: would write ${count} top-level bar bookmarks to Safari plist`);
+    return;
+  }
+
+  const spinner = log.step("Writing Safari bookmarks...");
+  try {
+    // Merge Safari-unique bookmarks before writing
+    let mergedTree = tree;
+    try {
+      const existing = readSafariBookmarks(plistPath);
+      const result = mergeWithExisting(tree, safariToCanonical(existing), "Safari");
+      mergedTree = result.tree;
+      if (result.preservedCount > 0) {
+        log.info(`Preserved ${result.preservedCount} Safari-unique bookmarks`);
+      }
+    } catch { /* no existing safari bookmarks or no permission — write Gist-only */ }
+
+    const backupPath = writeSafariBookmarks(mergedTree, plistPath);
+    spinner.succeed("Safari bookmarks updated (restart Safari to see changes)");
+    log.info(`Backup: ${backupPath}`);
+  } catch (err) {
+    spinner.fail("Failed to write Safari bookmarks");
+    throw err;
   }
 }

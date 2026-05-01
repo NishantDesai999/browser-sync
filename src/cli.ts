@@ -5,6 +5,7 @@ import { init } from "./commands/init.js";
 import { pull } from "./commands/pull.js";
 import { push } from "./commands/push.js";
 import { sync } from "./commands/sync.js";
+import { syncAll } from "./commands/sync-all.js";
 import { extensions } from "./commands/extensions.js";
 import { log } from "./utils/logger.js";
 
@@ -80,6 +81,20 @@ program
       }
     }
   );
+
+program
+  .command("sync-all")
+  .description("Pull from all browsers, merge, then push to all browsers in one command")
+  .option("--dry-run", "Simulate without writing")
+  .option("--verbose", "Print resolved file paths")
+  .action(async (opts: { dryRun?: boolean; verbose?: boolean }) => {
+    try {
+      await syncAll(opts);
+    } catch (err) {
+      log.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+  });
 
 program
   .command("extensions <browser>")

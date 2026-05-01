@@ -5,6 +5,16 @@ import { existsSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
+export function openWritableDb(dbPath: string): Database.Database {
+  if (!existsSync(dbPath)) {
+    throw new Error(`SQLite database not found: ${dbPath}`);
+  }
+  const db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+  return db;
+}
+
 export interface SafeDb {
   db: Database.Database;
   cleanup: () => void;
